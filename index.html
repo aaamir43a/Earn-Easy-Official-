@@ -794,7 +794,7 @@
 
                     const el = document.getElementById('earn-page-notification');
                     el.textContent = `অনুগ্রহ করে ${waitSeconds} সেকেন্ড অপেক্ষা করুন...`;
-                    // await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
+                    await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
                     if (el) el.textContent = '';
                 }
 
