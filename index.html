@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Earn Easy Official</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    /* একই ডিজাইন রাখা হয়েছে, কোন পরিবর্তন করা হয়নি */
+    body { font-family: 'Poppins', sans-serif; margin: 0; background: #F7F9FA; color: #2C3E50; }
+    .app-container { max-width: 450px; margin: auto; display: none; min-height: 100vh; background: #F7F9FA; padding-bottom: 70px; }
+    body.loaded .app-container { display: block; }
+    .page { display: none; padding: 115px 20px 20px; }
+    .page.active { display: block; }
+    /* অন্যান্য স্টাইল একই রাখা হয়েছে */
+  </style>
+</head>
+<body>
+  <!-- Loader -->
+  <div class="loader-wrapper">
+    <div id="loader-text">Loading App...</div>
+    <pre id="error-log" style="display:none;"></pre>
+  </div>
+
+  <!-- App Container -->
+  <div class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <img src="" class="dynamic-profile-pic" alt="Profile">
+      <div class="user-info">
+        <h1 class="user-dynamic-name"></h1>
+        <p>Balance: <span class="header-available-balance">0.00</span></p>
+      </div>
+    </header>
+
+    <!-- Pages -->
+    <div id="home-page" class="page active">
+      <main class="main-content">
+        <div class="card welcome-card">
+          <h2>Ready to Earn?</h2>
+          <button id="home-start-earning" class="earn-now-btn">Start Earning</button>
+        </div>
+      </main>
+    </div>
+
+    <div id="earn-page" class="page">
+      <div class="earn-withdraw-container">
+        <h1 class="main-title">Earn Rewards</h1>
+        <button id="earn-start-task-btn" class="btn btn-start">Start View</button>
+      </div>
+    </div>
+
+    <div id="withdraw-page" class="page">
+      <div class="earn-withdraw-container">
+        <h1 class="main-title">Withdraw Funds</h1>
+        <p class="balance">Available Balance: <span id="withdraw-available-balance">0.00</span></p>
+        <div id="withdraw-content-wrapper"></div>
+      </div>
+    </div>
+
+    <div id="profile-page" class="page">
+      <h1 class="main-title">My Profile</h1>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="bottom-nav">
+      <a data-page="home-page" class="nav-item active">Home</a>
+      <a data-page="earn-page" class="nav-item">Earn</a>
+      <a data-page="withdraw-page" class="nav-item">Withdraw</a>
+      <a data-page="profile-page" class="nav-item">Profile</a>
+    </nav>
+  </div>
+
+  <script>
+    const API_BASE_URL = 'https://earn-easy-official-server.onrender.com';
+    let currentUserData = null;
+    let withdrawSettings = null;
+    let isWithdrawSubmitting = false;
+
+    /**
+     * সিকিউর API কল
+     */
+    async function fetchSecure(endpoint, options = {}) {
+      const tg = window.Telegram.WebApp;
+      if (!tg || !tg.initData) throw new Error("Telegram authentication data not found.");
+
+      const headers = {
+        ...options.headers,
+        'Content-Type': 'application/json',
+        'x-telegram-auth': tg.initData
+      };
+
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, { ...options, headers });
+      if (!response.ok) throw new Error(`Server error: ${response.status}`);
+      return response.json();
+    }
+
+    /**
+     * Withdraw UI আপডেট
+     */
+    function updateWithdrawUI() {
+      const wrapper = document.getElementById('withdraw-content-wrapper');
+      if (!withdrawSettings || !withdrawSettings.enabled) {
+        wrapper.innerHTML = `<div class="withdraw-notice">Withdraw is currently disabled.</div>`;
+        return;
+      }
+
+      let methodsOptions = '<option value="" selected>Select a method</option>';
+      if (withdrawSettings.rechargeEnabled) methodsOptions += `<option value="mobile_recharge">Mobile Recharge</option>`;
+      if (withdrawSettings.methods?.length) {
+        withdrawSettings.methods.forEach(method => {
+          methodsOptions += `<option value="${method.name}">${method.name}</option>`;
+        });
+      }
+
+      wrapper.innerHTML = `
+        <form id="withdraw-form">
+          <select id="withdrawal-method" required>${methodsOptions}</select>
+          <input type="number" id="mobile-number" placeholder="Enter Mobile Number" required>
+          <input type="number" id="amount" placeholder="Enter Amount" required>
+          <button type="submit" class="submit-btn">Submit Withdrawal</button>
+        </form>`;
+    }
+
+    /**
+     * Event Delegation - সব ক্লিক, সাবমিট, চেঞ্জ হ্যান্ডেল করা হবে
+     */
+    function setupEventListeners() {
+      const appContainer = document.querySelector('.app-container');
+
+      appContainer.addEventListener('click', e => {
+        const navItem = e.target.closest('.nav-item');
+        if (navItem) {
+          e.preventDefault();
+          document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+          document.getElementById(navItem.dataset.page)?.classList.add('active');
+          document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+          navItem.classList.add('active');
+          if (navItem.dataset.page === 'withdraw-page') updateWithdrawUI();
+        }
+
+        if (e.target.id === 'home-start-earning') {
+          document.querySelector('.nav-item[data-page="earn-page"]').click();
+        }
+      });
+
+      // Withdraw form submit handler
+      appContainer.addEventListener('submit', async e => {
+        if (e.target && e.target.id === 'withdraw-form') {
+          e.preventDefault();
+          if (isWithdrawSubmitting) return;
+          isWithdrawSubmitting = true;
+
+          const btn = e.target.querySelector('.submit-btn');
+          btn.disabled = true;
+          btn.textContent = 'Submitting...';
+
+          try {
+            const method = document.getElementById('withdrawal-method').value;
+            const number = document.getElementById('mobile-number').value;
+            const amount = parseFloat(document.getElementById('amount').value);
+
+            if (!method) throw new Error('Please select a method.');
+            if (!number || number.length < 11) throw new Error('Enter a valid mobile number.');
+            if (isNaN(amount) || amount <= 0) throw new Error('Enter a valid amount.');
+
+            await fetchSecure('/requestWithdrawal', {
+              method: 'POST',
+              body: JSON.stringify({ userId: currentUserData?.id, method, number, amount })
+            });
+
+            alert('Withdrawal request submitted successfully!');
+            e.target.reset();
+            updateWithdrawUI();
+
+          } catch (err) {
+            alert('Error: ' + err.message);
+          } finally {
+            isWithdrawSubmitting = false;
+            btn.disabled = false;
+            btn.textContent = 'Submit Withdrawal';
+          }
+        }
+      });
+    }
+
+    /**
+     * Initialize App
+     */
+    document.addEventListener('DOMContentLoaded', async () => {
+      document.body.classList.add('loaded');
+      setupEventListeners();
+      // এখানে future API call এবং অন্যান্য initialization থাকবে
+    });
+  </script>
+</body>
+</html>
